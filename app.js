@@ -30,46 +30,34 @@ let uploadedImageBase64 = null;
 // カメラ初期化（ユーザータップ起動・Safari対応）
 // ─────────────────────────────────────────────────────────
 async function startCamera() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    showCameraError('NotSupportedError');
-    return;
-  }
-
+  const errTitle  = document.getElementById('cam-err-title');
+  const errDetail = document.getElementById('cam-err-detail');
   startCameraBtn.disabled = true;
   startCameraBtn.textContent = 'Starting…';
 
-  const attempts = [
-    { facingMode: 'environment' },
-    { facingMode: { ideal: 'environment' } },
-    { facingMode: 'user' },
-    true,
-  ];
-
-  for (const constraints of attempts) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: constraints, audio: false });
-
-      // Safari: stream設定前にvideoを表示状態にする
-      video.style.display = 'block';
-      placeholder.style.display = 'none';
-
-      video.muted = true;
-      video.srcObject = stream;
-
-      await new Promise((resolve, reject) => {
-        video.onloadedmetadata = resolve;
-        video.onerror = reject;
-        setTimeout(resolve, 3000);
-      });
-
-      await video.play().catch(() => {}); // Safariでplay()が失敗しても継続
-      return;
-    } catch {
-      // 次の制約を試す
-    }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    errTitle.textContent  = 'Camera not supported';
+    errDetail.textContent = 'Try Chrome or Firefox. (mediaDevices unavailable)';
+    startCameraBtn.disabled = false;
+    startCameraBtn.textContent = 'Retry';
+    return;
   }
 
-  showCameraError('NotFoundError');
+  try {
+    // 最もシンプルな制約から試す
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    video.muted   = true;
+    video.srcObject = stream;
+    video.style.display  = 'block';
+    placeholder.style.display = 'none';
+    video.play().catch(() => {}); // エラーは無視（autoplay属性で対応）
+  } catch (err) {
+    // エラーを画面に表示（診断用）
+    errTitle.textContent  = err.name;
+    errDetail.textContent = err.message || 'Unknown error';
+    startCameraBtn.disabled = false;
+    startCameraBtn.textContent = 'Retry';
+  }
 }
 
 // ページロード時はプレースホルダーを表示して待機
