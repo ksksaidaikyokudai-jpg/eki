@@ -27,62 +27,30 @@ const saveKeyBtn      = document.getElementById('save-key-btn');
 let uploadedImageBase64 = null;
 
 // ─────────────────────────────────────────────────────────
-// カメラ初期化（ユーザータップ起動・Safari対応）
+// カメラ起動（自動起動 + ボタンから再試行可能）
 // ─────────────────────────────────────────────────────────
 async function startCamera() {
-  const errTitle  = document.getElementById('cam-err-title');
-  const errDetail = document.getElementById('cam-err-detail');
-  startCameraBtn.disabled = true;
-  startCameraBtn.textContent = 'Starting…';
-
-  if (!navigator.mediaDevices?.getUserMedia) {
-    errTitle.textContent  = 'Camera not supported';
-    errDetail.textContent = 'Please use Chrome or Safari 14.1+';
-    startCameraBtn.disabled = false;
-    startCameraBtn.textContent = 'Retry';
-    return;
+  if (startCameraBtn) {
+    startCameraBtn.disabled = true;
+    startCameraBtn.textContent = 'Starting…';
   }
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    // display:block を srcObject より先に設定（Safari黒画面回避）
-    video.style.display = 'block';
-    video.muted = true;
+    video.muted     = true;
     video.srcObject = stream;
+    video.style.display      = 'block';
     placeholder.style.display = 'none';
     video.play().catch(() => {});
   } catch (err) {
-    errTitle.textContent  = err.name;
-    errDetail.textContent = err.message || 'Camera access failed';
-    startCameraBtn.disabled = false;
-    startCameraBtn.textContent = 'Retry';
-  }
-}
-
-// ページロード時にauto-start試行、失敗したらボタンが残る
-function initCamera() {
-  placeholder.style.display = 'flex';
-  video.style.display = 'none';
-  startCamera(); // PC/Chromeは自動起動、Safari失敗時はボタンが使える
-}
-
-function showCameraError(errName) {
-  video.style.display = 'none';
-  placeholder.style.display = 'flex';
-  const title  = document.getElementById('cam-err-title');
-  const detail = document.getElementById('cam-err-detail');
-  if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
-    title.textContent  = 'Camera permission denied';
-    detail.textContent = 'Allow camera access in browser settings, then reload';
-  } else if (errName === 'NotFoundError') {
-    title.textContent  = 'No camera found';
-    detail.textContent = 'Use 🖼️ to upload a photo instead';
-  } else if (errName === 'NotSupportedError' || errName === 'SecurityError') {
-    title.textContent  = 'Camera blocked';
-    detail.textContent = 'HTTPS required — check the URL starts with https://';
-  } else {
-    title.textContent  = 'Camera unavailable';
-    detail.textContent = 'Use 🖼️ to upload a photo instead';
+    video.style.display      = 'none';
+    placeholder.style.display = 'flex';
+    document.getElementById('cam-err-title').textContent  = err.name  || 'Camera error';
+    document.getElementById('cam-err-detail').textContent = err.message || 'Unable to access camera';
+    if (startCameraBtn) {
+      startCameraBtn.disabled = false;
+      startCameraBtn.textContent = 'Retry';
+    }
   }
 }
 
@@ -328,7 +296,7 @@ apiKeyInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveSettin
 // ─────────────────────────────────────────────────────────
 // 起動
 // ─────────────────────────────────────────────────────────
-initCamera();
+startCamera();
 
 // APIキー未設定なら起動直後に設定を開く
 if (!localStorage.getItem(KEY_APIKEY)) {
