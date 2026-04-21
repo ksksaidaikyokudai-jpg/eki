@@ -48,7 +48,12 @@ async function initCamera() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: constraints, audio: false });
       video.srcObject = stream;
-      // iOS Safari は autoplay だけでは再生されないため明示的に呼ぶ
+      video.muted = true; // iOS Safari は属性だけでなくプロパティ設定も必要
+      // loadedmetadata を待ってから play — 黒画面回避
+      await new Promise(resolve => {
+        video.onloadedmetadata = resolve;
+        setTimeout(resolve, 2000); // タイムアウト保険
+      });
       await video.play();
       video.style.display = 'block';
       placeholder.style.display = 'none';
