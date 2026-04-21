@@ -27,38 +27,64 @@ const saveKeyBtn      = document.getElementById('save-key-btn');
 let uploadedImageBase64 = null;
 
 // ─────────────────────────────────────────────────────────
-// カメラ起動（自動起動 + ボタンから再試行可能）
+// カメラ起動（ボタンのclickイベント内から呼ぶこと）
+// iOS Safariはユーザー操作外でgetUserMediaを呼ぶと無音で失敗する
 // ─────────────────────────────────────────────────────────
+function showCameraError(title, detail) {
+  document.getElementById('cam-err-title').textContent  = title;
+  document.getElementById('cam-err-detail').textContent = detail;
+  if (startCameraBtn) { startCameraBtn.disabled = false; startCameraBtn.textContent = 'Retry'; }
+}
+
 async function startCamera() {
   placeholder.style.display = 'flex';
   video.style.display = 'none';
-
-  if (startCameraBtn) {
-    startCameraBtn.disabled = true;
-    startCameraBtn.textContent = 'Starting…';
-  }
+  startCameraBtn.disabled = true;
+  startCameraBtn.textContent = 'Starting…';
   document.getElementById('cam-err-title').textContent  = 'Starting camera…';
   document.getElementById('cam-err-detail').textContent = 'Please allow camera access when prompted.';
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    document.getElementById('cam-err-title').textContent  = 'Camera not supported';
-    document.getElementById('cam-err-detail').textContent = 'Use Chrome or Safari on a secure (https) connection.';
-    if (startCameraBtn) { startCameraBtn.disabled = false; startCameraBtn.textContent = 'Retry'; }
+    showCameraError('Camera not supported', 'Use Safari or Chrome on a secure (https) connection.');
     return;
   }
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-    video.muted      = true;
-    video.srcObject  = stream;
-    placeholder.style.display = 'none';
-    video.style.display       = 'block';
-    await video.play().catch(() => {});
-  } catch (err) {
-    document.getElementById('cam-err-title').textContent  = err.name  || 'Camera error';
-    document.getElementById('cam-err-detail').textContent = err.message || 'Unable to access camera';
-    if (startCameraBtn) { startCameraBtn.disabled = false; startCameraBtn.textContent = 'Retry'; }
+  // 制約をiOS Safari向けに段階的にフォールバック
+  const constraintsList = [
+    { video: { facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: { facingMode: 'environment' }, audio: false },
+    { video: true, audio: false },
+  ];
+
+  let stream = null;
+  let lastErr = null;
+  for (const c of constraintsList) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(c);
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') break; // 制約を変えても意味がない
+    }
   }
+
+  if (!stream) {
+    const err = lastErr;
+    if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
+      showCameraError('カメラへのアクセスを許可してください', 'Settings → Safari → Camera → Allow');
+    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+      showCameraError('カメラが見つかりません', err.message || 'No camera device found.');
+    } else {
+      showCameraError(err.name || 'Camera error', err.message || 'Unable to access camera.');
+    }
+    return;
+  }
+
+  video.muted     = true;
+  video.srcObject = stream;
+  placeholder.style.display = 'none';
+  video.style.display       = 'block';
+  await video.play().catch(() => {});
 }
 
 // ─────────────────────────────────────────────────────────
@@ -301,9 +327,11 @@ settingsModal.addEventListener('click', e => { if (e.target === settingsModal) s
 apiKeyInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveSettings(); });
 
 // ─────────────────────────────────────────────────────────
-// 起動
+// 起動 — iOS SafariはユーザージェスチャーなしでgetUserMediaを許可しない
+// プレースホルダーを表示し、ボタンタップを待つ
 // ─────────────────────────────────────────────────────────
-startCamera();
+document.getElementById('cam-err-title').textContent  = 'Tap to start camera';
+document.getElementById('cam-err-detail').textContent = 'Allow camera access when prompted.';
 
 // APIキー未設定なら起動直後に設定を開く
 if (!localStorage.getItem(KEY_APIKEY)) {
