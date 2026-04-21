@@ -26,21 +26,30 @@ const saveKeyBtn     = document.getElementById('save-key-btn');
 let uploadedImageBase64 = null;
 
 // ─────────────────────────────────────────────────────────
-// カメラ初期化（段階的フォールバック）
+// カメラ初期化（段階的フォールバック・Safari対応）
 // ─────────────────────────────────────────────────────────
 async function initCamera() {
+  // iOS Safari など mediaDevices 未対応ブラウザのガード
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showCameraError('NotSupportedError');
+    return;
+  }
+
   // 試す制約を順番に定義（厳しい順）
   const attempts = [
     { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
     { facingMode: { ideal: 'environment' } },
+    { facingMode: 'environment' },  // Safari は文字列指定を好む場合がある
     { facingMode: 'user' },
-    true, // 制約なし（どのカメラでもOK）
+    true, // 制約なし
   ];
 
   for (const constraints of attempts) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: constraints, audio: false });
       video.srcObject = stream;
+      // iOS Safari は autoplay だけでは再生されないため明示的に呼ぶ
+      await video.play();
       video.style.display = 'block';
       placeholder.style.display = 'none';
       return;
@@ -50,27 +59,30 @@ async function initCamera() {
   }
 
   // 全て失敗 — エラー種別に応じたメッセージ
-  video.style.display = 'none';
-  placeholder.style.display = 'flex';
-
   try {
     await navigator.mediaDevices.getUserMedia({ video: true });
   } catch (err) {
-    const title  = document.getElementById('cam-err-title');
-    const detail = document.getElementById('cam-err-detail');
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      title.textContent  = 'Camera permission denied';
-      detail.textContent = 'Please allow camera access in your browser settings';
-    } else if (err.name === 'NotFoundError') {
-      title.textContent  = 'No camera found';
-      detail.textContent = 'Use the 🖼️ button to upload a photo instead';
-    } else if (err.name === 'NotSupportedError' || err.name === 'SecurityError') {
-      title.textContent  = 'Camera blocked';
-      detail.textContent = 'Make sure you are on HTTPS (not HTTP)';
-    } else {
-      title.textContent  = 'Camera unavailable';
-      detail.textContent = `${err.name}: Use 🖼️ to upload a photo`;
-    }
+    showCameraError(err.name);
+  }
+}
+
+function showCameraError(errName) {
+  video.style.display = 'none';
+  placeholder.style.display = 'flex';
+  const title  = document.getElementById('cam-err-title');
+  const detail = document.getElementById('cam-err-detail');
+  if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+    title.textContent  = 'Camera permission denied';
+    detail.textContent = 'Allow camera access in browser settings, then reload';
+  } else if (errName === 'NotFoundError') {
+    title.textContent  = 'No camera found';
+    detail.textContent = 'Use 🖼️ to upload a photo instead';
+  } else if (errName === 'NotSupportedError' || errName === 'SecurityError') {
+    title.textContent  = 'Camera blocked';
+    detail.textContent = 'HTTPS required — check the URL starts with https://';
+  } else {
+    title.textContent  = 'Camera unavailable';
+    detail.textContent = 'Use 🖼️ to upload a photo instead';
   }
 }
 
