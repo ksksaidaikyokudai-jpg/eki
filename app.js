@@ -30,27 +30,34 @@ let uploadedImageBase64 = null;
 // カメラ起動（自動起動 + ボタンから再試行可能）
 // ─────────────────────────────────────────────────────────
 async function startCamera() {
+  placeholder.style.display = 'flex';
+  video.style.display = 'none';
+
   if (startCameraBtn) {
     startCameraBtn.disabled = true;
     startCameraBtn.textContent = 'Starting…';
   }
+  document.getElementById('cam-err-title').textContent  = 'Starting camera…';
+  document.getElementById('cam-err-detail').textContent = 'Please allow camera access when prompted.';
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    document.getElementById('cam-err-title').textContent  = 'Camera not supported';
+    document.getElementById('cam-err-detail').textContent = 'Use Chrome or Safari on a secure (https) connection.';
+    if (startCameraBtn) { startCameraBtn.disabled = false; startCameraBtn.textContent = 'Retry'; }
+    return;
+  }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    video.muted     = true;
-    video.srcObject = stream;
-    video.style.display      = 'block';
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    video.muted      = true;
+    video.srcObject  = stream;
     placeholder.style.display = 'none';
-    video.play().catch(() => {});
+    video.style.display       = 'block';
+    await video.play().catch(() => {});
   } catch (err) {
-    video.style.display      = 'none';
-    placeholder.style.display = 'flex';
     document.getElementById('cam-err-title').textContent  = err.name  || 'Camera error';
     document.getElementById('cam-err-detail').textContent = err.message || 'Unable to access camera';
-    if (startCameraBtn) {
-      startCameraBtn.disabled = false;
-      startCameraBtn.textContent = 'Retry';
-    }
+    if (startCameraBtn) { startCameraBtn.disabled = false; startCameraBtn.textContent = 'Retry'; }
   }
 }
 

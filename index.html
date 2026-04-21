@@ -87,7 +87,7 @@
     }
 
     #camera-placeholder {
-      display: none;
+      display: flex;
       width: 100%;
       height: 100%;
       flex-direction: column;
@@ -445,7 +445,7 @@
   </header>
 
   <div id="camera-wrap">
-    <video id="video" autoplay playsinline muted></video>
+    <video id="video" autoplay playsinline muted style="display:none"></video>
     <img id="preview-img" alt="Uploaded photo">
 
     <div id="camera-placeholder">
