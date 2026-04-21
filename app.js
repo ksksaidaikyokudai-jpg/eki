@@ -7,68 +7,75 @@ const KEY_TRAINING    = 'eki_training';
 const MAX_ENTRIES     = 50;
 
 // DOM refs
-const video          = document.getElementById('video');
-const previewImg     = document.getElementById('preview-img');
-const placeholder    = document.getElementById('camera-placeholder');
-const captureBtn     = document.getElementById('capture-btn');
-const uploadBtn      = document.getElementById('upload-btn');
-const fileInput      = document.getElementById('file-input');
-const analyzingEl    = document.getElementById('analyzing');
-const resultsPanel   = document.getElementById('results-panel');
-const resultsContent = document.getElementById('results-content');
-const closeBtn       = document.getElementById('close-btn');
-const settingsBtn    = document.getElementById('settings-btn');
-const settingsModal  = document.getElementById('settings-modal');
-const apiKeyInput    = document.getElementById('api-key-input');
-const saveKeyBtn     = document.getElementById('save-key-btn');
+const video           = document.getElementById('video');
+const previewImg      = document.getElementById('preview-img');
+const placeholder     = document.getElementById('camera-placeholder');
+const startCameraBtn  = document.getElementById('start-camera-btn');
+const captureBtn      = document.getElementById('capture-btn');
+const uploadBtn       = document.getElementById('upload-btn');
+const fileInput       = document.getElementById('file-input');
+const analyzingEl     = document.getElementById('analyzing');
+const resultsPanel    = document.getElementById('results-panel');
+const resultsContent  = document.getElementById('results-content');
+const closeBtn        = document.getElementById('close-btn');
+const settingsBtn     = document.getElementById('settings-btn');
+const settingsModal   = document.getElementById('settings-modal');
+const apiKeyInput     = document.getElementById('api-key-input');
+const saveKeyBtn      = document.getElementById('save-key-btn');
 
 // アップロードモード中は画像base64をここに保持
 let uploadedImageBase64 = null;
 
 // ─────────────────────────────────────────────────────────
-// カメラ初期化（段階的フォールバック・Safari対応）
+// カメラ初期化（ユーザータップ起動・Safari対応）
 // ─────────────────────────────────────────────────────────
-async function initCamera() {
-  // iOS Safari など mediaDevices 未対応ブラウザのガード
+async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
     showCameraError('NotSupportedError');
     return;
   }
 
-  // 試す制約を順番に定義（厳しい順）
+  startCameraBtn.disabled = true;
+  startCameraBtn.textContent = 'Starting…';
+
   const attempts = [
-    { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    { facingMode: 'environment' },
     { facingMode: { ideal: 'environment' } },
-    { facingMode: 'environment' },  // Safari は文字列指定を好む場合がある
     { facingMode: 'user' },
-    true, // 制約なし
+    true,
   ];
 
   for (const constraints of attempts) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: constraints, audio: false });
-      video.srcObject = stream;
-      video.muted = true; // iOS Safari は属性だけでなくプロパティ設定も必要
-      // loadedmetadata を待ってから play — 黒画面回避
-      await new Promise(resolve => {
-        video.onloadedmetadata = resolve;
-        setTimeout(resolve, 2000); // タイムアウト保険
-      });
-      await video.play();
+
+      // Safari: stream設定前にvideoを表示状態にする
       video.style.display = 'block';
       placeholder.style.display = 'none';
+
+      video.muted = true;
+      video.srcObject = stream;
+
+      await new Promise((resolve, reject) => {
+        video.onloadedmetadata = resolve;
+        video.onerror = reject;
+        setTimeout(resolve, 3000);
+      });
+
+      await video.play().catch(() => {}); // Safariでplay()が失敗しても継続
       return;
     } catch {
       // 次の制約を試す
     }
   }
 
-  // 全て失敗 — エラー種別に応じたメッセージ
-  try {
-    await navigator.mediaDevices.getUserMedia({ video: true });
-  } catch (err) {
-    showCameraError(err.name);
-  }
+  showCameraError('NotFoundError');
+}
+
+// ページロード時はプレースホルダーを表示して待機
+function initCamera() {
+  placeholder.style.display = 'flex';
+  video.style.display = 'none';
 }
 
 function showCameraError(errName) {
@@ -312,9 +319,10 @@ function saveSettings() {
 // ─────────────────────────────────────────────────────────
 captureBtn.addEventListener('click', handleCapture);
 uploadBtn.addEventListener('click', handleUploadClick);
+startCameraBtn.addEventListener('click', startCamera);
 closeBtn.addEventListener('click', () => {
   resultsPanel.classList.remove('open');
-  // カメラビューに戻す
+  // アップロードモードならカメラビューに戻す
   if (uploadedImageBase64) {
     uploadedImageBase64 = null;
     previewImg.style.display = 'none';
