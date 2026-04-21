@@ -80,11 +80,13 @@ async function startCamera() {
     return;
   }
 
-  video.muted     = true;
+  video.muted = true;
+  video.setAttribute('playsinline', '');
+  video.setAttribute('webkit-playsinline', '');
   video.srcObject = stream;
   placeholder.style.display = 'none';
   video.style.display       = 'block';
-  await video.play().catch(() => {});
+  video.play().catch(() => {}); // awaitしない — iOS Safariのジェスチャーコンテキストを保持
 }
 
 // ─────────────────────────────────────────────────────────
@@ -327,11 +329,16 @@ settingsModal.addEventListener('click', e => { if (e.target === settingsModal) s
 apiKeyInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveSettings(); });
 
 // ─────────────────────────────────────────────────────────
-// 起動 — iOS SafariはユーザージェスチャーなしでgetUserMediaを許可しない
-// プレースホルダーを表示し、ボタンタップを待つ
+// 起動 — デスクトップは自動起動、iOS Safariはボタンタップ待ち
+// iOS SafariはユーザージェスチャーなしでgetUserMediaを許可しない
 // ─────────────────────────────────────────────────────────
-document.getElementById('cam-err-title').textContent  = 'Tap to start camera';
-document.getElementById('cam-err-detail').textContent = 'Allow camera access when prompted.';
+const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+if (isIOS) {
+  document.getElementById('cam-err-title').textContent  = 'Tap to start camera';
+  document.getElementById('cam-err-detail').textContent = 'Allow camera access when prompted.';
+} else {
+  startCamera();
+}
 
 // APIキー未設定なら起動直後に設定を開く
 if (!localStorage.getItem(KEY_APIKEY)) {
