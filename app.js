@@ -35,35 +35,35 @@ async function startCamera() {
   startCameraBtn.disabled = true;
   startCameraBtn.textContent = 'Starting…';
 
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  if (!navigator.mediaDevices?.getUserMedia) {
     errTitle.textContent  = 'Camera not supported';
-    errDetail.textContent = 'Try Chrome or Firefox. (mediaDevices unavailable)';
+    errDetail.textContent = 'Please use Chrome or Safari 14.1+';
     startCameraBtn.disabled = false;
     startCameraBtn.textContent = 'Retry';
     return;
   }
 
   try {
-    // 最もシンプルな制約から試す
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    video.muted   = true;
+    // display:block を srcObject より先に設定（Safari黒画面回避）
+    video.style.display = 'block';
+    video.muted = true;
     video.srcObject = stream;
-    video.style.display  = 'block';
     placeholder.style.display = 'none';
-    video.play().catch(() => {}); // エラーは無視（autoplay属性で対応）
+    video.play().catch(() => {});
   } catch (err) {
-    // エラーを画面に表示（診断用）
     errTitle.textContent  = err.name;
-    errDetail.textContent = err.message || 'Unknown error';
+    errDetail.textContent = err.message || 'Camera access failed';
     startCameraBtn.disabled = false;
     startCameraBtn.textContent = 'Retry';
   }
 }
 
-// ページロード時はプレースホルダーを表示して待機
+// ページロード時にauto-start試行、失敗したらボタンが残る
 function initCamera() {
   placeholder.style.display = 'flex';
   video.style.display = 'none';
+  startCamera(); // PC/Chromeは自動起動、Safari失敗時はボタンが使える
 }
 
 function showCameraError(errName) {
