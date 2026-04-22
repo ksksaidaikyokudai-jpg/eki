@@ -1,81 +1,114 @@
 // eki. — Phase A: Camera → Claude API → Location display
 
-const MODEL           = 'claude-sonnet-4-6';
-const API_URL         = 'https://api.anthropic.com/v1/messages';
-const KEY_APIKEY      = 'eki_apikey';
-const KEY_TRAINING    = 'eki_training';
-const MAX_ENTRIES     = 50;
+// ─────────────────────────────────────────────────────────
+// 定数
+// ─────────────────────────────────────────────────────────
+const MODEL        = 'claude-sonnet-4-6';
+const API_URL      = 'https://api.anthropic.com/v1/messages';
+const KEY_APIKEY   = 'eki_apikey';
+const KEY_TRAINING = 'eki_training';
+const MAX_ENTRIES  = 50;
 
+// ─────────────────────────────────────────────────────────
 // DOM refs
-const video           = document.getElementById('video');
-const previewImg      = document.getElementById('preview-img');
-const placeholder     = document.getElementById('camera-placeholder');
-const startCameraBtn  = document.getElementById('start-camera-btn');
-const captureBtn      = document.getElementById('capture-btn');
-const uploadBtn       = document.getElementById('upload-btn');
-const fileInput       = document.getElementById('file-input');
-const analyzingEl     = document.getElementById('analyzing');
-const resultsPanel    = document.getElementById('results-panel');
-const resultsContent  = document.getElementById('results-content');
-const closeBtn        = document.getElementById('close-btn');
-const settingsBtn     = document.getElementById('settings-btn');
-const settingsModal   = document.getElementById('settings-modal');
-const apiKeyInput     = document.getElementById('api-key-input');
-const saveKeyBtn      = document.getElementById('save-key-btn');
-
-// アップロードモード中は画像base64をここに保持
-let uploadedImageBase64 = null;
+// ─────────────────────────────────────────────────────────
+const video          = document.getElementById('video');
+const previewImg     = document.getElementById('preview-img');
+const placeholder    = document.getElementById('camera-placeholder');
+const startCameraBtn = document.getElementById('start-camera-btn');
+const captureBtn     = document.getElementById('capture-btn');
+const uploadBtn      = document.getElementById('upload-btn');
+const fileInput      = document.getElementById('file-input');
+const analyzingEl    = document.getElementById('analyzing');
+const resultsPanel   = document.getElementById('results-panel');
+const resultsContent = document.getElementById('results-content');
+const closeBtn       = document.getElementById('close-btn');
+const settingsBtn    = document.getElementById('settings-btn');
+const settingsModal  = document.getElementById('settings-modal');
+const apiKeyInput    = document.getElementById('api-key-input');
+const saveKeyBtn     = document.getElementById('save-key-btn');
 
 // ─────────────────────────────────────────────────────────
-// カメラ起動（ボタンのclickイベント内から呼ぶこと）
-// iOS Safariはユーザー操作外でgetUserMediaを呼ぶと無音で失敗する
+// 状態
 // ─────────────────────────────────────────────────────────
-function showCameraError(title, detail) {
+let cameraActive        = false; // カメラストリームが有効かどうか
+let uploadedImageBase64 = null;  // アップロードモード中の画像データ
+
+// ─────────────────────────────────────────────────────────
+// カメラ管理
+// ─────────────────────────────────────────────────────────
+
+// プレースホルダーにメッセージを表示してカメラビューを隠す
+function showPlaceholder(title, detail, btnLabel = 'Start Camera') {
+  video.style.display        = 'none';
+  previewImg.style.display   = 'none';
+  placeholder.style.display  = 'flex';
   document.getElementById('cam-err-title').textContent  = title;
   document.getElementById('cam-err-detail').textContent = detail;
-  if (startCameraBtn) { startCameraBtn.disabled = false; startCameraBtn.textContent = 'Retry'; }
+  startCameraBtn.disabled    = false;
+  startCameraBtn.textContent = btnLabel;
 }
 
+// カメラ起動 — iOS Safariではユーザー操作（click）内から呼ぶこと
+// ページロード時に自動呼び出しすると iOS Safari で権限ダイアログが出ない
 async function startCamera() {
+  cameraActive = false;
   placeholder.style.display = 'flex';
-  video.style.display = 'none';
-  startCameraBtn.disabled = true;
+  video.style.display       = 'none';
+  startCameraBtn.disabled   = true;
   startCameraBtn.textContent = 'Starting…';
   document.getElementById('cam-err-title').textContent  = 'Starting camera…';
-  document.getElementById('cam-err-detail').textContent = 'Please allow camera access when prompted.';
+  document.getElementById('cam-err-detail').textContent = 'Allow camera access when prompted.';
 
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    showCameraError('Camera not supported', 'Use Safari or Chrome on a secure (https) connection.');
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showPlaceholder(
+      'Camera not available',
+      'Use a secure connection (https), or upload a photo with the 🖼️ button below.',
+      'Retry'
+    );
     return;
   }
 
-  // 制約をiOS Safari向けに段階的にフォールバック
+  // iOS Safari向けに制約を段階的にフォールバック
   const constraintsList = [
     { video: { facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
     { video: { facingMode: 'environment' }, audio: false },
     { video: true, audio: false },
   ];
 
-  let stream = null;
-  let lastErr = null;
+  let stream   = null;
+  let lastErr  = null;
   for (const c of constraintsList) {
     try {
       stream = await navigator.mediaDevices.getUserMedia(c);
       break;
     } catch (err) {
       lastErr = err;
-      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') break; // 制約を変えても意味がない
+      // 権限拒否は制約を変えても解決しないので即終了
+      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') break;
     }
   }
 
   if (!stream) {
-    const err = lastErr;
-    if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
-      showCameraError('カメラへのアクセスを許可してください', 'Settings → Safari → Camera → Allow');
-    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-      showCameraError('カメラが見つかりません', err.message || 'No camera device found.');
+    const name = lastErr?.name || '';
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      showPlaceholder(
+        'Camera access denied',
+        'Allow camera in Settings → Safari → Camera, or use the 🖼️ button to upload a photo.',
+        'Retry'
+      );
+    } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      showPlaceholder(
+        'No camera found',
+        'No camera detected on this device. Use the 🖼️ button to upload a photo.',
+        'Retry'
+      );
     } else {
-      showCameraError(err.name || 'Camera error', err.message || 'Unable to access camera.');
+      showPlaceholder(
+        lastErr?.name || 'Camera error',
+        (lastErr?.message || 'Unable to access camera.') + ' Use the 🖼️ button to upload a photo.',
+        'Retry'
+      );
     }
     return;
   }
@@ -83,19 +116,21 @@ async function startCamera() {
   video.muted = true;
   video.setAttribute('playsinline', '');
   video.setAttribute('webkit-playsinline', '');
-  video.srcObject = stream;
+  video.srcObject          = stream;
   placeholder.style.display = 'none';
   video.style.display       = 'block';
-  video.play().catch(() => {}); // awaitしない — iOS Safariのジェスチャーコンテキストを保持
+  video.play().catch(() => {}); // await しない — iOS Safariのジェスチャーコンテキストを保持
+  cameraActive = true;
 }
 
-// ─────────────────────────────────────────────────────────
-// フレームをbase64 JPEGとして取得
-// ─────────────────────────────────────────────────────────
+// カメラフレームをbase64 JPEGとして取得
 function captureFrame() {
+  if (!cameraActive || video.videoWidth === 0) {
+    throw new Error('Camera is not ready. Please start the camera first.');
+  }
   const canvas = document.createElement('canvas');
-  canvas.width  = video.videoWidth  || 1280;
-  canvas.height = video.videoHeight || 720;
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
   canvas.getContext('2d').drawImage(video, 0, 0);
   return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
 }
@@ -138,7 +173,7 @@ Rules:
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
-      'content-type': 'application/json'
+      'content-type': 'application/json',
     },
     body: JSON.stringify({
       model: MODEL,
@@ -147,10 +182,10 @@ Rules:
         role: 'user',
         content: [
           { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
-          { type: 'text', text: prompt }
-        ]
-      }]
-    })
+          { type: 'text', text: prompt },
+        ],
+      }],
+    }),
   });
 
   if (!res.ok) {
@@ -158,10 +193,8 @@ Rules:
     throw new Error(err?.error?.message || `API error ${res.status}`);
   }
 
-  const data = await res.json();
-  const raw  = data.content[0].text.trim();
-
-  // JSONブロックを確実に抽出
+  const data  = await res.json();
+  const raw   = data.content[0].text.trim();
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('Unexpected response format from AI.');
   return JSON.parse(match[0]);
@@ -178,7 +211,57 @@ function saveTrainingEntry(result) {
 }
 
 // ─────────────────────────────────────────────────────────
-// アイコンマッピング
+// アップロード処理
+// ─────────────────────────────────────────────────────────
+function handleUploadClick() {
+  fileInput.click();
+}
+
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const dataUrl = e.target.result;
+    uploadedImageBase64 = dataUrl.split(',')[1];
+
+    // プレビュー表示（カメラ・プレースホルダーを隠す）
+    video.style.display       = 'none';
+    placeholder.style.display = 'none';
+    previewImg.src             = dataUrl;
+    previewImg.style.display  = 'block';
+  };
+  reader.readAsDataURL(file);
+  fileInput.value = ''; // 同じファイルを再選択できるようリセット
+});
+
+// ─────────────────────────────────────────────────────────
+// 撮影／アップロード → 解析フロー
+// ─────────────────────────────────────────────────────────
+async function handleCapture() {
+  captureBtn.disabled = true;
+  captureBtn.classList.add('loading');
+  analyzingEl.classList.add('on');
+  resultsPanel.classList.remove('open');
+
+  try {
+    // アップロード画像があればそちらを優先、なければカメラフレームを取得
+    const img    = uploadedImageBase64 ?? captureFrame();
+    const result = await analyzeImage(img);
+    saveTrainingEntry(result);
+    renderResult(result);
+  } catch (err) {
+    renderError(err.message || 'Something went wrong. Please try again.');
+  } finally {
+    captureBtn.disabled = false;
+    captureBtn.classList.remove('loading');
+    analyzingEl.classList.remove('on');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// 結果表示
 // ─────────────────────────────────────────────────────────
 const ICONS = {
   elevator:   '🛗',
@@ -191,9 +274,6 @@ const ICONS = {
   stairs:     '🪜',
 };
 
-// ─────────────────────────────────────────────────────────
-// 結果表示
-// ─────────────────────────────────────────────────────────
 function renderResult(r) {
   const stepsHTML = (r.steps || []).map(s => `
     <div class="step">
@@ -234,59 +314,10 @@ function renderError(msg) {
   resultsPanel.classList.add('open');
 }
 
+// XSSエスケープ
 function esc(str) {
   if (typeof str !== 'string') return '';
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// ─────────────────────────────────────────────────────────
-// 画像アップロード処理
-// ─────────────────────────────────────────────────────────
-function handleUploadClick() {
-  fileInput.click();
-}
-
-fileInput.addEventListener('change', () => {
-  const file = fileInput.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = e => {
-    const dataUrl = e.target.result;
-    uploadedImageBase64 = dataUrl.split(',')[1];
-
-    // カメラを隠してプレビュー表示
-    video.style.display = 'none';
-    placeholder.style.display = 'none';
-    previewImg.src = dataUrl;
-    previewImg.style.display = 'block';
-  };
-  reader.readAsDataURL(file);
-  fileInput.value = ''; // 同じファイルを再選択できるようリセット
-});
-
-// ─────────────────────────────────────────────────────────
-// 撮影/アップロード → 解析フロー
-// ─────────────────────────────────────────────────────────
-async function handleCapture() {
-  captureBtn.disabled = true;
-  captureBtn.classList.add('loading');
-  analyzingEl.classList.add('on');
-  resultsPanel.classList.remove('open');
-
-  try {
-    // アップロード画像があればそちらを優先
-    const img    = uploadedImageBase64 ?? captureFrame();
-    const result = await analyzeImage(img);
-    saveTrainingEntry(result);
-    renderResult(result);
-  } catch (err) {
-    renderError(err.message || 'Something went wrong. Please try again.');
-  } finally {
-    captureBtn.disabled = false;
-    captureBtn.classList.remove('loading');
-    analyzingEl.classList.remove('on');
-  }
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ─────────────────────────────────────────────────────────
@@ -306,41 +337,52 @@ function saveSettings() {
 }
 
 // ─────────────────────────────────────────────────────────
-// イベント
+// イベント登録
 // ─────────────────────────────────────────────────────────
 captureBtn.addEventListener('click', handleCapture);
 uploadBtn.addEventListener('click', handleUploadClick);
 startCameraBtn.addEventListener('click', startCamera);
+
 closeBtn.addEventListener('click', () => {
   resultsPanel.classList.remove('open');
-  // アップロードモードならカメラビューに戻す
+  // アップロードプレビューを閉じる → カメラ起動中ならカメラへ、そうでなければプレースホルダーへ
   if (uploadedImageBase64) {
-    uploadedImageBase64 = null;
+    uploadedImageBase64      = null;
     previewImg.style.display = 'none';
-    previewImg.src = '';
-    video.style.display = 'block';
+    previewImg.src           = '';
+    if (cameraActive) {
+      video.style.display = 'block';
+    } else {
+      showPlaceholder('Tap to start camera', 'Allow camera access when prompted.');
+    }
   }
 });
+
 settingsBtn.addEventListener('click', openSettings);
 saveKeyBtn.addEventListener('click', saveSettings);
-settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.classList.remove('open'); });
-
-// Enterキーで保存
+settingsModal.addEventListener('click', e => {
+  if (e.target === settingsModal) settingsModal.classList.remove('open');
+});
 apiKeyInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveSettings(); });
 
 // ─────────────────────────────────────────────────────────
-// 起動 — デスクトップは自動起動、iOS Safariはボタンタップ待ち
-// iOS SafariはユーザージェスチャーなしでgetUserMediaを許可しない
+// 起動
 // ─────────────────────────────────────────────────────────
-const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-if (isIOS) {
-  document.getElementById('cam-err-title').textContent  = 'Tap to start camera';
-  document.getElementById('cam-err-detail').textContent = 'Allow camera access when prompted.';
-} else {
-  startCamera();
+function init() {
+  // iOS Safari: getUserMedia はユーザー操作内からのみ許可される
+  // → プレースホルダーを表示してボタンタップを待つ
+  // デスクトップ: ページロード時に自動起動
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isIOS) {
+    showPlaceholder('Tap to start camera', 'Allow camera access when prompted.');
+  } else {
+    startCamera();
+  }
+
+  // APIキー未設定なら起動直後に設定を開く
+  if (!localStorage.getItem(KEY_APIKEY)) {
+    setTimeout(openSettings, 600);
+  }
 }
 
-// APIキー未設定なら起動直後に設定を開く
-if (!localStorage.getItem(KEY_APIKEY)) {
-  setTimeout(openSettings, 600);
-}
+init();
