@@ -113,14 +113,47 @@ async function startCamera() {
     return;
   }
 
+  // video を先に表示してから srcObject を設定する
+  // iOS Safari は display:none の要素で autoplay が動かないことがある
   video.muted = true;
   video.setAttribute('playsinline', '');
   video.setAttribute('webkit-playsinline', '');
-  video.srcObject          = stream;
   placeholder.style.display = 'none';
   video.style.display       = 'block';
-  video.play().catch(() => {}); // await しない — iOS Safariのジェスチャーコンテキストを保持
-  cameraActive = true;
+  video.srcObject           = stream;
+
+  // 映像が実際に始まったことを確認してから cameraActive をセット
+  // 5秒以内に loadedmetadata が来なければエラー扱い
+  const playTimeout = setTimeout(() => {
+    if (!cameraActive) {
+      stopStream(stream);
+      showPlaceholder(
+        'Camera timed out',
+        'Video failed to start. Try again, or use the 🖼️ button to upload a photo.',
+        'Retry'
+      );
+    }
+  }, 5000);
+
+  video.onloadedmetadata = () => {
+    clearTimeout(playTimeout);
+    video.play().catch(() => {});
+    cameraActive = true;
+    video.onloadedmetadata = null;
+  };
+
+  // すでにメタデータが揃っている場合（リトライ時など）
+  if (video.readyState >= 1) {
+    clearTimeout(playTimeout);
+    video.play().catch(() => {});
+    cameraActive = true;
+    video.onloadedmetadata = null;
+  }
+}
+
+// ストリームを安全に停止する
+function stopStream(stream) {
+  stream?.getTracks().forEach(t => t.stop());
 }
 
 // カメラフレームをbase64 JPEGとして取得
@@ -345,16 +378,18 @@ startCameraBtn.addEventListener('click', startCamera);
 
 closeBtn.addEventListener('click', () => {
   resultsPanel.classList.remove('open');
-  // アップロードプレビューを閉じる → カメラ起動中ならカメラへ、そうでなければプレースホルダーへ
+  // アップロードプレビューが出ていた場合は元のビューに戻す
   if (uploadedImageBase64) {
     uploadedImageBase64      = null;
     previewImg.style.display = 'none';
     previewImg.src           = '';
-    if (cameraActive) {
-      video.style.display = 'block';
-    } else {
-      showPlaceholder('Tap to start camera', 'Allow camera access when prompted.');
-    }
+  }
+  // 常にカメラ状態に合わせてビューを復元
+  if (cameraActive) {
+    placeholder.style.display = 'none';
+    video.style.display       = 'block';
+  } else {
+    showPlaceholder('Tap to start camera', 'Allow camera access when prompted.');
   }
 });
 
