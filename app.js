@@ -274,7 +274,7 @@ async function handleCapture() {
     const img    = uploadedImageBase64 ?? captureFrame();
     const result = await analyzeImage(img);
     saveTrainingEntry(result);
-    await renderResult(result);
+    renderResult(result);
   } catch (err) {
     renderError(err.message || 'Something went wrong. Please try again.');
   } finally {
@@ -298,21 +298,29 @@ const ICONS = {
   stairs:     '🪜',
 };
 
-// locations.json をキャッシュ
-let locationsCache = null;
-async function getLocations() {
-  if (!locationsCache) {
-    const res = await fetch('locations.json');
-    locationsCache = await res.json();
-  }
-  return locationsCache;
-}
+// 新宿駅 主要ポイント座標（locations.json と同期）
+// x/y は 新宿駅構内図東京都-1.png に対するパーセント値
+const LOCATIONS = {
+  jr_west_exit:         { x: 18, y: 43, label: '西口' },
+  jr_central_west_gate: { x: 23, y: 43, label: '中央西口改札' },
+  jr_central_east_gate: { x: 38, y: 43, label: '中央東口改札' },
+  jr_east_exit:         { x: 44, y: 43, label: '東口' },
+  jr_north_exit:        { x: 28, y: 22, label: '北口' },
+  jr_south_exit:        { x: 30, y: 65, label: '南口' },
+  jr_new_south_exit:    { x: 40, y: 70, label: '新南口' },
+  jr_platform:          { x: 30, y: 43, label: 'JRホーム' },
+  busta_shinjuku:       { x: 11, y: 72, label: 'バスタ新宿' },
+  underground_south:    { x: 72, y: 62, label: '地下南通路' },
+  underground_east:     { x: 86, y: 50, label: '地下東通路' },
+  underground_west:     { x: 57, y: 50, label: '地下西通路' },
+  metro_marunouchi:     { x: 76, y: 47, label: '丸ノ内線' },
+  metro_oedo:           { x: 68, y: 68, label: '都営大江戸線' },
+};
 
 // マップセクションのHTMLを生成（location_code が有効な場合のみ）
-async function buildMapHTML(locationCode) {
+function buildMapHTML(locationCode) {
   if (!locationCode || locationCode === 'unknown') return '';
-  const locs = await getLocations();
-  const loc  = locs[locationCode];
+  const loc = LOCATIONS[locationCode];
   if (!loc) return '';
 
   return `
@@ -328,7 +336,7 @@ async function buildMapHTML(locationCode) {
     </div>`;
 }
 
-async function renderResult(r) {
+function renderResult(r) {
   const stepsHTML = (r.steps || []).map(s => `
     <div class="step">
       <div class="step-icon">${ICONS[s.icon] || '📍'}</div>
@@ -338,7 +346,7 @@ async function renderResult(r) {
   const landmarkText = r.landmarks?.length
     ? `<div class="landmarks">Visible: ${r.landmarks.map(esc).join(' · ')}</div>` : '';
 
-  const mapHTML = await buildMapHTML(r.location_code);
+  const mapHTML = buildMapHTML(r.location_code);
 
   resultsContent.innerHTML = `
     <div class="station-row">
