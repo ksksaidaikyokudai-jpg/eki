@@ -173,6 +173,7 @@ Respond with ONLY a valid JSON object — no markdown, no code fences:
   "station": "Shinjuku" | "Tokyo" | "Shibuya" | "Ikebukuro" | "Other" | "Unknown",
   "station_ja": "Japanese station name (e.g. 新宿駅)",
   "area": "specific area in English (gate, concourse, platform, etc.)",
+  "location_code": "jr_west_exit" | "jr_central_west_gate" | "jr_central_east_gate" | "jr_east_exit" | "jr_north_exit" | "jr_south_exit" | "jr_new_south_exit" | "jr_platform" | "busta_shinjuku" | "underground_south" | "underground_east" | "underground_west" | "metro_marunouchi" | "metro_oedo" | "unknown",
   "confidence": "high" | "medium" | "low",
   "landmarks": ["visible sign or landmark 1", "visible sign or landmark 2"],
   "recommended_exit": "best exit name for someone with large luggage",
@@ -186,7 +187,9 @@ Rules:
 - Always prefer elevator routes over stairs or escalators
 - If image is not a train station, set confidence "low" and explain in notes
 - Provide 3–6 clear steps; use signs visible in the image to improve accuracy
-- Keep each step short and action-oriented`;
+- Keep each step short and action-oriented
+- For Shinjuku station, always set location_code from the predefined list above
+- For other stations set location_code to "unknown"`;
 
   const res = await fetch(API_URL, {
     method: 'POST',
@@ -271,7 +274,7 @@ async function handleCapture() {
     const img    = uploadedImageBase64 ?? captureFrame();
     const result = await analyzeImage(img);
     saveTrainingEntry(result);
-    renderResult(result);
+    await renderResult(result);
   } catch (err) {
     renderError(err.message || 'Something went wrong. Please try again.');
   } finally {
@@ -295,7 +298,37 @@ const ICONS = {
   stairs:     '🪜',
 };
 
-function renderResult(r) {
+// locations.json をキャッシュ
+let locationsCache = null;
+async function getLocations() {
+  if (!locationsCache) {
+    const res = await fetch('locations.json');
+    locationsCache = await res.json();
+  }
+  return locationsCache;
+}
+
+// マップセクションのHTMLを生成（location_code が有効な場合のみ）
+async function buildMapHTML(locationCode) {
+  if (!locationCode || locationCode === 'unknown') return '';
+  const locs = await getLocations();
+  const loc  = locs[locationCode];
+  if (!loc) return '';
+
+  return `
+    <div class="map-section">
+      <div class="steps-label">Map Location</div>
+      <div class="map-wrap">
+        <img src="新宿駅構内図東京都-1.png" class="station-map" alt="Shinjuku Station Map">
+        <div class="map-pin" style="left:${loc.x}%;top:${loc.y}%">
+          <div class="pin-dot"></div>
+          <div class="pin-label">${esc(loc.label)}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function renderResult(r) {
   const stepsHTML = (r.steps || []).map(s => `
     <div class="step">
       <div class="step-icon">${ICONS[s.icon] || '📍'}</div>
@@ -304,6 +337,8 @@ function renderResult(r) {
 
   const landmarkText = r.landmarks?.length
     ? `<div class="landmarks">Visible: ${r.landmarks.map(esc).join(' · ')}</div>` : '';
+
+  const mapHTML = await buildMapHTML(r.location_code);
 
   resultsContent.innerHTML = `
     <div class="station-row">
@@ -321,6 +356,8 @@ function renderResult(r) {
     </div>` : ''}
 
     ${landmarkText}
+
+    ${mapHTML}
 
     ${stepsHTML.length ? `<div class="steps-label">Directions</div>${stepsHTML}` : ''}
 
