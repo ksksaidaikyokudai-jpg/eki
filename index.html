@@ -473,7 +473,6 @@
       <button id="upload-btn" aria-label="Upload photo" title="Upload photo">🖼️</button>
       <button id="capture-btn" aria-label="Take photo"></button>
     </div>
-    <input type="file" id="file-input" accept="image/*" style="display:none">
 
     <!-- Results panel (slides up from bottom) -->
     <div id="results-panel" role="region" aria-live="polite">
@@ -503,6 +502,8 @@
     </div>
   </div>
 
+  <!-- overflow:hidden の外に置く — iOS Safari で .click() が無視される問題を回避 -->
+  <input type="file" id="file-input" accept="image/*" style="display:none">
   <script src="app.js"></script>
 </body>
 </html>

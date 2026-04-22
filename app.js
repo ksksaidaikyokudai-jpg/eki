@@ -69,28 +69,16 @@ async function startCamera() {
     return;
   }
 
-  // iOS Safari向けに制約を段階的にフォールバック
-  const constraintsList = [
-    { video: { facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
-    { video: { facingMode: 'environment' }, audio: false },
-    { video: true, audio: false },
-  ];
-
-  let stream   = null;
-  let lastErr  = null;
-  for (const c of constraintsList) {
-    try {
-      stream = await navigator.mediaDevices.getUserMedia(c);
-      break;
-    } catch (err) {
-      lastErr = err;
-      // 権限拒否は制約を変えても解決しないので即終了
-      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') break;
-    }
-  }
-
-  if (!stream) {
-    const name = lastErr?.name || '';
+  // getUserMedia は1回だけ await する
+  // ループで複数回 await すると iOS Safari のジェスチャーコンテキストが失われる
+  let stream = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' },
+      audio: false,
+    });
+  } catch (err) {
+    const name = err.name || '';
     if (name === 'NotAllowedError' || name === 'SecurityError') {
       showPlaceholder(
         'Camera access denied',
@@ -100,13 +88,13 @@ async function startCamera() {
     } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
       showPlaceholder(
         'No camera found',
-        'No camera detected on this device. Use the 🖼️ button to upload a photo.',
+        'No camera detected. Use the 🖼️ button to upload a photo.',
         'Retry'
       );
     } else {
       showPlaceholder(
-        lastErr?.name || 'Camera error',
-        (lastErr?.message || 'Unable to access camera.') + ' Use the 🖼️ button to upload a photo.',
+        name || 'Camera error',
+        (err.message || 'Unable to access camera.') + ' Use the 🖼️ button to upload a photo.',
         'Retry'
       );
     }
